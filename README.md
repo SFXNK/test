@@ -2,10 +2,10 @@
 # TAC 435 PA6 #
 
 ### EDIT BELOW ###
-Name: Tommy Trojan
+Name: Jason Zhao
 
-Email: ttrojan@usc.edu
+Email: zhanhaoz@usc.edu
 
-Section: [M/W or T/TH]
+Section: [T/TH]
 
-Platform: [PC/MAC]
+Platform: [PC]
