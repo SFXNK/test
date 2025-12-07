@@ -1,11 +1,15 @@
 #!/bin/bash
+curl -L -O http://chalonverse.com/435/pa7.tar.gz || { echo "::error::Unable to download graded tests. Try again."; exit 1; }
+tar xzf pa7.tar.gz || { echo "::error::Error downloading graded tests. Try again."; exit 1; }
+echo "Downloading IMDB data..."
+curl -O https://datasets.imdbws.com/title.basics.tsv.gz || { echo "::error::Unable to download IMDB data. Try again."; exit 1; }
+gunzip title.basics.tsv.gz
+
 # Cmake into build directory
-curl -L -O http://chalonverse.com/435/pa6.tar.gz || { echo "::error::Unable to download graded tests. Try again."; exit 1; }
-tar xzf pa6.tar.gz || { echo "::error::Error downloading graded tests. Try again."; exit 1; }
 echo "Compiling..."
 mkdir build
 cd build
-CC=clang CXX=clang++ cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON .. || exit 1
+CC=clang CXX=clang++ cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_BUILD_TYPE=Release .. || { echo "::error::CMake failed to configure. Your grade is currently a 0!!"; exit 1; }
 build_failed=0
 make 2> >(tee diagnostics.txt >&2)
 if [ "${PIPESTATUS[0]}" -ne "0" ] ; then
@@ -27,7 +31,7 @@ fi
 cd build
 # Run clang-tidy
 echo "Running clang-tidy..."
-../run-clang-tidy.py -quiet -header-filter=".*/src/[A-Z].*" -export-fixes=tidy.yaml | tee clang-tidy.txt 
+../run-clang-tidy.py -quiet -header-filter="[a-zA-Z].*" -export-fixes=tidy.yaml | tee clang-tidy.txt
 if [ "${PIPESTATUS[0]}" -ne "0" ] ; then
 	echo "::warn::clang-tidy failed to run"
 fi
@@ -35,16 +39,19 @@ fi
 cd ..
 ./tidy-json.py
 
-# Run student tests
-echo "Running student tests..."
-timeout 30 build/tests/tests [student]
+# Try to spin up server
+build/main title.basics.tsv &
+
+# Try to connect to server
+echo "Waiting for server to start up..."
+wget --tries=7 --waitretry=2 --retry-connrefused http://localhost:12345/movie/id/tt0092099 || { echo "::error::Could not connect to server in time! This means either your server is too slow to start, or it's immediately starting before the data is loaded, or it's returning a 404 incorrectly"; echo -e "## Grade Report\n\n## \xF0\x9F\x9A\xA8\xF0\x9F\x9A\xA8 Could not connect to server in time! Your grade is currently a 0!! \xF0\x9F\x98\xAD\xF0\x9F\x98\xAD\n\nThis could mean a variety of things like your server is too slow to start, or it's immediately starting before the data is loaded, or it's returning a 404 incorrectly." >> ${GITHUB_STEP_SUMMARY}; exit 1; }
+
 # Run graded tests
+echo "Running tests..."
 tests_failed=0
-echo "Running graded tests..."
-timeout 10 build/tests/tests [graded1] -r=github || tests_failed=1
-timeout 10 build/tests/tests [graded2] -r=github || tests_failed=1
-timeout 10 build/tests/tests [graded3] -r=github || tests_failed=1
-timeout 10 build/tests/tests [graded4] -r=github || tests_failed=1
+timeout 30 newman run postman/pa7-tests.postman_collection.json -r cli,json-summary --color on --reporter-summary-json-export summary.json || tests_failed=1
+
+./summary-github.py
 
 cd build
 echo -e "\n## Compiler Warnings (any warnings can result in a deduction)" >> ${GITHUB_STEP_SUMMARY}
